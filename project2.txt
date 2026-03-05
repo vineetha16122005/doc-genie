@@ -1,0 +1,158 @@
+import gradio as gr
+import ast
+from datetime import datetime
+
+# -----------------------------
+# DOC GENIE ANALYZER CLASS
+# -----------------------------
+class DocGenieAnalyzer:
+
+    @staticmethod
+    def extract_function_signature(code):
+        tree = ast.parse(code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                func_name = node.name
+                params = []
+                for arg in node.args.args:
+                    param_name = arg.arg
+                    param_type = "Any"
+                    if arg.annotation:
+                        param_type = ast.unparse(arg.annotation)
+                    params.append({"name": param_name, "type": param_type})
+                return {
+                    "name": func_name,
+                    "params": params,
+                    "return_type": "Any"
+                }
+        return None
+
+    @staticmethod
+    def analyze_function_logic(code):
+        tree = ast.parse(code)
+
+        has_loops = any(isinstance(node, (ast.For, ast.While)) for node in ast.walk(tree))
+        has_conditions = any(isinstance(node, ast.If) for node in ast.walk(tree))
+        has_return = any(isinstance(node, ast.Return) for node in ast.walk(tree))
+
+        description = "Performs computation"
+        if has_loops:
+            description += " with iterative logic"
+        if has_conditions:
+            description += " and conditional checks"
+        if has_return:
+            description += " and returns result"
+
+        return {
+            "has_loops": has_loops,
+            "has_conditions": has_conditions,
+            "has_return": has_return,
+            "description": description
+        }
+
+    @staticmethod
+    def generate_google_docstring(signature, analysis):
+        params_section = ""
+        for p in signature["params"]:
+            params_section += f"    {p['name']} ({p['type']}): Description of {p['name']}.\n"
+
+        docstring = f'''"""
+{signature["name"].replace("_"," ").title()}.
+
+{analysis["description"]}.
+
+Args:
+{params_section}
+Returns:
+    {signature["return_type"]}: Result of the function.
+"""'''
+        return docstring
+
+    @staticmethod
+    def generate_numpy_docstring(signature, analysis):
+        params_section = ""
+        for p in signature["params"]:
+            params_section += f"{p['name']} : {p['type']}\n    Description of {p['name']}.\n"
+
+        docstring = f'''"""
+{signature["name"].replace("_"," ").title()}.
+
+{analysis["description"]}.
+
+Parameters
+----------
+{params_section}
+Returns
+-------
+{signature["return_type"]}
+    Result of the function.
+"""'''
+        return docstring
+
+
+# -----------------------------
+# MAIN DOCSTRING GENERATOR
+# -----------------------------
+def generate_docstring(code, style):
+
+    try:
+        signature = DocGenieAnalyzer.extract_function_signature(code)
+        if not signature:
+            return "❌ No function detected in code."
+
+        analysis = DocGenieAnalyzer.analyze_function_logic(code)
+
+        if style == "google":
+            docstring = DocGenieAnalyzer.generate_google_docstring(signature, analysis)
+        else:
+            docstring = DocGenieAnalyzer.generate_numpy_docstring(signature, analysis)
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        output = f"""
+----------------------------------------
+ DOC-GENIE DOCUMENTATION OUTPUT
+----------------------------------------
+
+Generated At: {timestamp}
+
+Function Name: {signature["name"]}
+
+Generated Docstring:
+
+{docstring}
+
+----------------------------------------
+"""
+
+        return output
+
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+
+# -----------------------------
+# GRADIO INTERFACE
+# -----------------------------
+with gr.Blocks() as demo:
+    gr.Markdown("## 📘 Doc-Genie - Python Docstring Generator")
+
+    with gr.Row():
+        code_input = gr.Textbox(
+            label="Enter Python Function",
+            lines=10,
+            value="""def calculate_factorial(n):
+    if n == 0:
+        return 1
+    return n * calculate_factorial(n-1)"""
+        )
+
+    style = gr.Radio(["google", "numpy"], value="google", label="Select Docstring Style")
+
+    output = gr.Textbox(label="Generated Documentation", lines=20)
+
+    btn = gr.Button("Generate Docstring")
+
+    btn.click(generate_docstring, inputs=[code_input, style], outputs=output)
+
+demo.launch()
